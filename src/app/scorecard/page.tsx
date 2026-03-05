@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useScorecard } from "@/hooks/useScorecard";
 import { ProgressSidebar } from "@/components/ProgressSidebar";
@@ -10,6 +10,18 @@ import { InviteModal } from "@/components/InviteModal";
 import { JoinSessionForm } from "@/components/JoinSessionForm";
 
 export default function ScorecardPage() {
+    return (
+        <Suspense fallback={
+            <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: "48px", height: "48px", border: "3px solid #f97316", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+            </div>
+        }>
+            <ScorecardContent />
+        </Suspense>
+    );
+}
+
+function ScorecardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const sessionFromUrl = searchParams.get("session");
