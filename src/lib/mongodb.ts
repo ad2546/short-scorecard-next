@@ -1,35 +1,26 @@
 import { MongoClient, Db } from "mongodb";
 
-const uri = process.env.MONGODB_URI!;
 const dbName = "scorecard";
-
-if (!uri) {
-    throw new Error("MONGODB_URI environment variable is not set");
-}
-
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
 
 declare global {
     // eslint-disable-next-line no-var
     var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-if (process.env.NODE_ENV === "development") {
-    // In dev, reuse the connection across hot reloads
-    if (!global._mongoClientPromise) {
-        client = new MongoClient(uri);
-        global._mongoClientPromise = client.connect();
+function getClientPromise(): Promise<MongoClient> {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error("MONGODB_URI environment variable is not set");
+
+    if (process.env.NODE_ENV === "development") {
+        if (!global._mongoClientPromise) {
+            global._mongoClientPromise = new MongoClient(uri).connect();
+        }
+        return global._mongoClientPromise;
     }
-    clientPromise = global._mongoClientPromise;
-} else {
-    client = new MongoClient(uri);
-    clientPromise = client.connect();
+    return new MongoClient(uri).connect();
 }
 
 export async function getDb(): Promise<Db> {
-    const c = await clientPromise;
-    return c.db(dbName);
+    const client = await getClientPromise();
+    return client.db(dbName);
 }
-
-export default clientPromise;
