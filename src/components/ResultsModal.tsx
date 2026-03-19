@@ -196,13 +196,10 @@ export function ResultsModal({
 
     if (!isOpen) return null;
 
-    // Calculate min and max scores for each section
     const getSectionRange = (score: SectionScore) => {
-        // For now, we'll show the average. In a real implementation,
-        // this would track min/max individual question scores
-        const min = Math.max(0, Math.floor(score.average));
-        const max = Math.min(4, Math.ceil(score.average));
-        return `${min} - ${max}`;
+        if (score.answered === 0) return "—";
+        if (score.min === score.max) return `${score.min}`;
+        return `${score.min} – ${score.max}`;
     };
 
     return (

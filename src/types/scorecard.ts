@@ -32,6 +32,8 @@ export interface SectionScore {
   average: number;
   answered: number;
   total: number;
+  min: number;
+  max: number;
 }
 
 export interface PersonalInfo {

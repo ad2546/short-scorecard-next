@@ -197,6 +197,80 @@ body {
   box-shadow: 0 0 12px var(--accent-glow);
 }
 
+/* ── Mobile responsive layout ── */
+
+/* Sidebar: fixed on desktop, hidden drawer on mobile */
+.scorecard-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 40;
+    transition: transform 0.3s ease;
+}
+
+/* Main content offset on desktop */
+.scorecard-main {
+    margin-left: 280px;
+}
+
+/* Mobile overlay when sidebar is open */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 39;
+}
+
+/* Mobile hamburger button */
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.3);
+    color: #f97316;
+    font-size: 20px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 768px) {
+    .scorecard-sidebar {
+        transform: translateX(-100%);
+    }
+
+    .scorecard-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .scorecard-main {
+        margin-left: 0;
+        padding-top: 64px;
+    }
+
+    .sidebar-overlay.open {
+        display: block;
+    }
+
+    .sidebar-toggle {
+        display: flex;
+    }
+
+    .sidebar-close-btn {
+        display: block !important;
+    }
+}
+
 /* Circular progress */
 .circular-progress {
   transform: rotate(-90deg);

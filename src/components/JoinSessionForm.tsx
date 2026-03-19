@@ -6,9 +6,10 @@ import { PersonalInfo } from "@/types/scorecard";
 interface JoinSessionFormProps {
     onJoin: (info: PersonalInfo) => void;
     sessionId: string;
+    sessionOwner?: string;
 }
 
-export function JoinSessionForm({ onJoin, sessionId }: JoinSessionFormProps) {
+export function JoinSessionForm({ onJoin, sessionId, sessionOwner }: JoinSessionFormProps) {
     const [formData, setFormData] = useState<PersonalInfo>({
         firstName: "",
         lastName: "",
@@ -85,6 +86,11 @@ export function JoinSessionForm({ onJoin, sessionId }: JoinSessionFormProps) {
                     <p style={{ fontSize: "14px", color: "rgba(255, 255, 255, 0.5)", marginBottom: "8px" }}>
                         You've been invited to collaborate on a scorecard
                     </p>
+                    {sessionOwner && (
+                        <p style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "6px" }}>
+                            Started by <span style={{ color: "#f97316", fontWeight: "600" }}>{sessionOwner}</span>
+                        </p>
+                    )}
                     <p style={{ fontSize: "12px", color: "rgba(249, 115, 22, 0.8)", fontFamily: "monospace" }}>
                         Session: {sessionId.substring(0, 20)}...
                     </p>

@@ -41,6 +41,7 @@ function ScorecardContent() {
         shareableLink,
         sessionId,
         needsToJoin,
+        sessionOwner,
         joinSession,
     } = useScorecard(sessionFromUrl || undefined);
 
@@ -48,6 +49,7 @@ function ScorecardContent() {
     const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
     const [showResultsModal, setShowResultsModal] = useState(false);
     const [showInviteModal, setShowInviteModal] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Redirect if not started
     useEffect(() => {
@@ -86,6 +88,7 @@ function ScorecardContent() {
         const index = sections.indexOf(section);
         if (index !== -1) {
             setCurrentSectionIndex(index);
+            setSidebarOpen(false);
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
     };
@@ -114,6 +117,7 @@ function ScorecardContent() {
             <JoinSessionForm
                 sessionId={sessionId}
                 onJoin={joinSession}
+                sessionOwner={sessionOwner}
             />
         );
     }
@@ -140,16 +144,33 @@ function ScorecardContent() {
                 shareableLink={shareableLink}
             />
 
+            {/* Mobile overlay */}
+            <div
+                className={`sidebar-overlay${sidebarOpen ? " open" : ""}`}
+                onClick={() => setSidebarOpen(false)}
+            />
+
+            {/* Mobile hamburger */}
+            <button
+                className="sidebar-toggle"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+            >
+                ☰
+            </button>
+
             {/* Sidebar */}
             <ProgressSidebar
                 sectionScores={sectionScores}
                 overallStats={overallStats}
                 activeSection={currentSection}
                 onSectionClick={goToSection}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
             />
 
             {/* Main Content */}
-            <div style={{ marginLeft: "280px" }}>
+            <div className="scorecard-main" style={{ marginLeft: "280px" }}>
                 {/* Header */}
                 <header style={{
                     position: "sticky",

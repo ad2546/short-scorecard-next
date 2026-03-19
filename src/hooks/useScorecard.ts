@@ -1,19 +1,16 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Question, Answer, SectionScore, PersonalInfo, TeamMember, AnsweredBy } from "@/types/scorecard";
 import { questions as defaultQuestions, sectionNames } from "@/data/questions";
 
 const STORAGE_KEY = "scorecard_state_v3";
-const SESSION_PREFIX = "scorecard_session_";
 
-// Generate a hash of the current questions to detect changes
 const generateQuestionsHash = () => {
     const qids = defaultQuestions.map(q => q.QID).sort().join(",");
     return `${defaultQuestions.length}_${qids}`;
 };
 
-// Generate a unique session ID
 const generateSessionId = () => {
     return `sc_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
 };
@@ -47,6 +44,37 @@ const getDefaultAnswers = (): Record<string, Answer> => {
     return answers;
 };
 
+// ── API helpers ──────────────────────────────────────────────────────────────
+
+async function apiCreateSession(payload: {
+    sessionId: string;
+    personalInfo: PersonalInfo;
+    answers: Record<string, Answer>;
+    questionsHash: string;
+}) {
+    await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+async function apiGetSession(id: string): Promise<ScorecardState | null> {
+    const res = await fetch(`/api/sessions/${id}`);
+    if (!res.ok) return null;
+    return res.json();
+}
+
+async function apiUpdateSession(id: string, data: Partial<ScorecardState>) {
+    await fetch(`/api/sessions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+    });
+}
+
+// ── Hook ─────────────────────────────────────────────────────────────────────
+
 export function useScorecard(initialSessionId?: string) {
     const [questions] = useState<Question[]>(defaultQuestions);
     const [answers, setAnswers] = useState<Record<string, Answer>>(getDefaultAnswers);
@@ -59,29 +87,28 @@ export function useScorecard(initialSessionId?: string) {
     const [needsToJoin, setNeedsToJoin] = useState(false);
     const [sessionOwner, setSessionOwner] = useState<string>("");
 
-    // Generate shareable link
+    // Debounce ref: avoid saving on every keystroke
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const shareableLink = useMemo(() => {
         if (!sessionId || typeof window === "undefined") return "";
         return `${window.location.origin}/scorecard?session=${sessionId}`;
     }, [sessionId]);
 
-    // Load from localStorage on mount
+    // ── Load on mount ─────────────────────────────────────────────────────────
     useEffect(() => {
-        try {
-            // Check if joining via session ID
-            if (initialSessionId) {
-                const sessionKey = `${SESSION_PREFIX}${initialSessionId}`;
-                const sessionData = localStorage.getItem(sessionKey);
-
-                if (sessionData) {
-                    const state: ScorecardState = JSON.parse(sessionData);
-                    if (state.questionsHash === QUESTIONS_HASH) {
+        async function load() {
+            try {
+                // Joining via shared session link
+                if (initialSessionId) {
+                    const state = await apiGetSession(initialSessionId);
+                    if (state && state.questionsHash === QUESTIONS_HASH) {
                         setSessionId(initialSessionId);
                         setAnswers(state.answers || getDefaultAnswers());
                         setTeamMembers(state.teamMembers || []);
-                        // Store owner info for display but don't set as current user
-                        setSessionOwner(`${state.personalInfo.firstName} ${state.personalInfo.lastName}`);
-                        // User needs to enter their own info to join
+                        setSessionOwner(
+                            `${state.personalInfo.firstName} ${state.personalInfo.lastName}`
+                        );
                         setNeedsToJoin(true);
                         setHasStarted(true);
                         setIsTeamMember(true);
@@ -89,51 +116,40 @@ export function useScorecard(initialSessionId?: string) {
                         return;
                     }
                 }
-            }
 
-            // Load from regular storage
-            const saved = localStorage.getItem(STORAGE_KEY);
+                // Load from localStorage
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const state: ScorecardState = JSON.parse(saved);
+                    if (state.questionsHash === QUESTIONS_HASH && state.version === "3") {
+                        const validQIDs = new Set(defaultQuestions.map(q => q.QID));
+                        const validAnswers: Record<string, Answer> = {};
+                        defaultQuestions.forEach((q) => {
+                            validAnswers[q.QID] = { qid: q.QID, score: null, notes: "" };
+                        });
+                        Object.entries(state.answers || {}).forEach(([qid, answer]) => {
+                            if (validQIDs.has(qid)) validAnswers[qid] = answer;
+                        });
 
-            if (saved) {
-                const state: ScorecardState = JSON.parse(saved);
-
-                if (state.questionsHash === QUESTIONS_HASH && state.version === "3") {
-                    const validQIDs = new Set(defaultQuestions.map(q => q.QID));
-                    const validAnswers: Record<string, Answer> = {};
-
-                    defaultQuestions.forEach((q) => {
-                        validAnswers[q.QID] = { qid: q.QID, score: null, notes: "" };
-                    });
-
-                    Object.entries(state.answers || {}).forEach(([qid, answer]) => {
-                        if (validQIDs.has(qid)) {
-                            validAnswers[qid] = answer;
-                        }
-                    });
-
-                    setAnswers(validAnswers);
-                    setPersonalInfo(state.personalInfo || getDefaultPersonalInfo());
-                    setTeamMembers(state.teamMembers || []);
-                    setHasStarted(state.hasStarted || false);
-                    setSessionId(state.sessionId || "");
-                } else {
-                    localStorage.removeItem(STORAGE_KEY);
-                    localStorage.removeItem("scorecard_state");
-                    localStorage.removeItem("scorecard_state_v2");
-                    setAnswers(getDefaultAnswers());
-                    setPersonalInfo(getDefaultPersonalInfo());
-                    setHasStarted(false);
+                        setAnswers(validAnswers);
+                        setPersonalInfo(state.personalInfo || getDefaultPersonalInfo());
+                        setTeamMembers(state.teamMembers || []);
+                        setHasStarted(state.hasStarted || false);
+                        setSessionId(state.sessionId || "");
+                    } else {
+                        localStorage.removeItem(STORAGE_KEY);
+                    }
                 }
+            } catch (e) {
+                console.error("Failed to load saved state:", e);
+                localStorage.removeItem(STORAGE_KEY);
             }
-        } catch (e) {
-            console.error("Failed to load saved state:", e);
-            localStorage.removeItem(STORAGE_KEY);
+            setIsHydrated(true);
         }
-
-        setIsHydrated(true);
+        load();
     }, [initialSessionId]);
 
-    // Save to localStorage on every change
+    // ── Save to localStorage + MongoDB (debounced 800ms) ─────────────────────
     useEffect(() => {
         if (!isHydrated || !sessionId) return;
 
@@ -148,64 +164,60 @@ export function useScorecard(initialSessionId?: string) {
             createdAt: Date.now(),
         };
 
-        // Save to main storage
+        // Always keep localStorage in sync as an offline cache
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
-        // Also save to session-specific storage for sharing
-        const sessionKey = `${SESSION_PREFIX}${sessionId}`;
-        localStorage.setItem(sessionKey, JSON.stringify(state));
+        // Debounce the network write
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+            apiUpdateSession(sessionId, { answers, teamMembers, personalInfo });
+        }, 800);
+
+        return () => {
+            if (saveTimer.current) clearTimeout(saveTimer.current);
+        };
     }, [answers, personalInfo, teamMembers, hasStarted, isHydrated, sessionId]);
 
-    // Poll for updates from other users (every 3 seconds)
+    // ── Poll MongoDB every 3 seconds for collaborator updates ────────────────
     useEffect(() => {
         if (!isHydrated || !sessionId || needsToJoin) return;
 
-        const pollInterval = setInterval(() => {
+        const pollInterval = setInterval(async () => {
             try {
-                const sessionKey = `${SESSION_PREFIX}${sessionId}`;
-                const sessionData = localStorage.getItem(sessionKey);
+                const state = await apiGetSession(sessionId);
+                if (!state) return;
 
-                if (sessionData) {
-                    const state: ScorecardState = JSON.parse(sessionData);
+                const storedAnswers = state.answers || {};
+                let hasUpdates = false;
+                const mergedAnswers = { ...answers };
 
-                    // Check if there are new answers we don't have
-                    const storedAnswers = state.answers || {};
-                    let hasUpdates = false;
-
-                    // Merge answers - keep newer timestamps
-                    const mergedAnswers = { ...answers };
-                    Object.entries(storedAnswers).forEach(([qid, storedAnswer]) => {
-                        const currentAnswer = answers[qid];
-                        const storedTimestamp = storedAnswer.answeredBy?.timestamp || 0;
-                        const currentTimestamp = currentAnswer?.answeredBy?.timestamp || 0;
-
-                        // Update if stored answer is newer
-                        if (storedTimestamp > currentTimestamp) {
-                            mergedAnswers[qid] = storedAnswer;
-                            hasUpdates = true;
-                        }
-                    });
-
-                    if (hasUpdates) {
-                        setAnswers(mergedAnswers);
+                Object.entries(storedAnswers).forEach(([qid, storedAnswer]) => {
+                    const currentAnswer = answers[qid];
+                    const storedTs = storedAnswer.answeredBy?.timestamp || 0;
+                    const currentTs = currentAnswer?.answeredBy?.timestamp || 0;
+                    if (storedTs > currentTs) {
+                        mergedAnswers[qid] = storedAnswer;
+                        hasUpdates = true;
                     }
+                });
 
-                    // Also update team members
-                    if (state.teamMembers && state.teamMembers.length !== teamMembers.length) {
-                        setTeamMembers(state.teamMembers);
-                    }
+                if (hasUpdates) setAnswers(mergedAnswers);
+
+                if (state.teamMembers && state.teamMembers.length !== teamMembers.length) {
+                    setTeamMembers(state.teamMembers);
                 }
             } catch (e) {
                 console.error("Polling error:", e);
             }
-        }, 3000); // Poll every 3 seconds
+        }, 3000);
 
         return () => clearInterval(pollInterval);
     }, [isHydrated, sessionId, needsToJoin, answers, teamMembers]);
 
+    // ── Actions ───────────────────────────────────────────────────────────────
+
     const updateAnswer = useCallback((answer: Answer, currentUser?: PersonalInfo) => {
-        // Add answerer info if provided
-        if (currentUser && currentUser.firstName) {
+        if (currentUser?.firstName) {
             const answeredBy: AnsweredBy = {
                 firstName: currentUser.firstName,
                 lastName: currentUser.lastName,
@@ -214,11 +226,7 @@ export function useScorecard(initialSessionId?: string) {
             };
             answer = { ...answer, answeredBy };
         }
-
-        setAnswers((prev) => ({
-            ...prev,
-            [answer.qid]: answer,
-        }));
+        setAnswers((prev) => ({ ...prev, [answer.qid]: answer }));
     }, []);
 
     const updatePersonalInfo = useCallback((info: Partial<PersonalInfo>) => {
@@ -234,18 +242,26 @@ export function useScorecard(initialSessionId?: string) {
         setTeamMembers((prev) => [...prev, newMember]);
     }, []);
 
-    const startScorecard = useCallback((info?: PersonalInfo) => {
+    const startScorecard = useCallback(async (info?: PersonalInfo) => {
         const newSessionId = generateSessionId();
+        const defaultAnswers = getDefaultAnswers();
+        const newPersonalInfo = info || personalInfo;
+
         setSessionId(newSessionId);
-        setAnswers(getDefaultAnswers());
-        if (info) {
-            setPersonalInfo(info);
-        }
+        setAnswers(defaultAnswers);
+        if (info) setPersonalInfo(info);
         setTeamMembers([]);
         setHasStarted(true);
-    }, []);
 
-    // Join an existing session as a team member
+        // Create session in MongoDB
+        await apiCreateSession({
+            sessionId: newSessionId,
+            personalInfo: newPersonalInfo,
+            answers: defaultAnswers,
+            questionsHash: QUESTIONS_HASH,
+        });
+    }, [personalInfo]);
+
     const joinSession = useCallback((memberInfo: PersonalInfo) => {
         setPersonalInfo(memberInfo);
         setNeedsToJoin(false);
@@ -256,35 +272,48 @@ export function useScorecard(initialSessionId?: string) {
         });
     }, [addTeamMember]);
 
-    // Group questions by section
+    const resetScorecard = useCallback(() => {
+        setAnswers(getDefaultAnswers());
+        setPersonalInfo(getDefaultPersonalInfo());
+        setTeamMembers([]);
+        setHasStarted(false);
+        setSessionId("");
+        localStorage.removeItem(STORAGE_KEY);
+    }, []);
+
+    // ── Derived state ─────────────────────────────────────────────────────────
+
     const groupedQuestions = useMemo(() => {
         const groups: Record<string, Question[]> = {};
         questions.forEach((q) => {
-            if (!groups[q.Section]) {
-                groups[q.Section] = [];
-            }
+            if (!groups[q.Section]) groups[q.Section] = [];
             groups[q.Section].push(q);
         });
         return groups;
     }, [questions]);
 
-    // Calculate section scores with weighted average
     const sectionScores = useMemo((): SectionScore[] => {
-        const sections = Object.keys(groupedQuestions);
-        return sections.map((section) => {
+        return Object.keys(groupedQuestions).map((section) => {
             const sectionQuestions = groupedQuestions[section];
             let weightedTotal = 0;
             let totalWeight = 0;
             let answered = 0;
+            let min = Infinity;
+            let max = -Infinity;
 
             sectionQuestions.forEach((q) => {
                 const answer = answers[q.QID];
                 const weight = q.Weight || 1;
-                if (answer && (typeof answer.score === "number") || answer?.score === "N/A") {
+                const isAnswered =
+                    answer && (typeof answer.score === "number" || answer.score === "N/A");
+
+                if (isAnswered) {
                     answered++;
                     if (typeof answer.score === "number") {
                         weightedTotal += answer.score * weight;
                         totalWeight += weight;
+                        if (answer.score < min) min = answer.score;
+                        if (answer.score > max) max = answer.score;
                     }
                 }
             });
@@ -295,25 +324,23 @@ export function useScorecard(initialSessionId?: string) {
                 average: totalWeight > 0 ? weightedTotal / totalWeight : 0,
                 answered,
                 total: sectionQuestions.length,
+                min: min === Infinity ? 0 : min,
+                max: max === -Infinity ? 0 : max,
             };
         });
     }, [groupedQuestions, answers]);
 
-    // Calculate overall stats with weighted average
     const overallStats = useMemo(() => {
         let weightedTotal = 0;
         let totalWeight = 0;
         let answeredCount = 0;
 
         const questionWeights: Record<string, number> = {};
-        questions.forEach((q) => {
-            questionWeights[q.QID] = q.Weight || 1;
-        });
+        questions.forEach((q) => { questionWeights[q.QID] = q.Weight || 1; });
 
         Object.entries(answers).forEach(([qid, answer]) => {
             if (!questionWeights[qid]) return;
-
-            if ((typeof answer.score === "number") || answer.score === "N/A") {
+            if (typeof answer.score === "number" || answer.score === "N/A") {
                 answeredCount++;
                 if (typeof answer.score === "number") {
                     const weight = questionWeights[qid] || 1;
@@ -330,19 +357,6 @@ export function useScorecard(initialSessionId?: string) {
             progress: questions.length > 0 ? (answeredCount / questions.length) * 100 : 0,
         };
     }, [answers, questions]);
-
-    const resetScorecard = useCallback(() => {
-        if (sessionId) {
-            const sessionKey = `${SESSION_PREFIX}${sessionId}`;
-            localStorage.removeItem(sessionKey);
-        }
-        setAnswers(getDefaultAnswers());
-        setPersonalInfo(getDefaultPersonalInfo());
-        setTeamMembers([]);
-        setHasStarted(false);
-        setSessionId("");
-        localStorage.removeItem(STORAGE_KEY);
-    }, [sessionId]);
 
     return {
         questions,

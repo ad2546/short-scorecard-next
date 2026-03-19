@@ -12,6 +12,8 @@ interface ProgressSidebarProps {
     };
     activeSection?: string;
     onSectionClick?: (section: string) => void;
+    isOpen?: boolean;
+    onClose?: () => void;
 }
 
 export function ProgressSidebar({
@@ -19,6 +21,8 @@ export function ProgressSidebar({
     overallStats,
     activeSection,
     onSectionClick,
+    isOpen = false,
+    onClose,
 }: ProgressSidebarProps) {
     const circumference = 2 * Math.PI * 40;
     const strokeDashoffset =
@@ -26,28 +30,36 @@ export function ProgressSidebar({
 
     return (
         <aside
+            className={`scorecard-sidebar${isOpen ? " open" : ""}`}
             style={{
-                position: "fixed",
-                left: 0,
-                top: 0,
                 height: "100vh",
                 width: "280px",
                 background: "#0a0a0a",
                 borderRight: "1px solid rgba(255,255,255,0.06)",
                 display: "flex",
                 flexDirection: "column",
-                zIndex: 50,
             }}
         >
             {/* Header */}
-            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                <h1 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "2px" }}>
-                    <span style={{ color: "#f97316" }}>Short</span>
-                    <span style={{ color: "white" }}>Scorecard</span>
-                </h1>
-                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "1.5px" }}>
-                    Wildfire Resilience
-                </p>
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                    <h1 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "2px" }}>
+                        <span style={{ color: "#f97316" }}>Short</span>
+                        <span style={{ color: "white" }}>Scorecard</span>
+                    </h1>
+                    <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                        Wildfire Resilience
+                    </p>
+                </div>
+                {onClose && (
+                    <button
+                        onClick={onClose}
+                        className="sidebar-close-btn"
+                        style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: "22px", cursor: "pointer", display: "none" }}
+                    >
+                        ×
+                    </button>
+                )}
             </div>
 
             {/* Progress Ring + Stats */}
