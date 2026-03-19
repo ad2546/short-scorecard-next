@@ -17,6 +17,8 @@ const generateSessionId = () => {
 
 const QUESTIONS_HASH = generateQuestionsHash();
 
+export type SyncStatus = "idle" | "syncing" | "synced" | "error";
+
 interface ScorecardState {
     version: string;
     questionsHash: string;
@@ -51,26 +53,29 @@ async function apiCreateSession(payload: {
     personalInfo: PersonalInfo;
     answers: Record<string, Answer>;
     questionsHash: string;
-}) {
-    await fetch("/api/sessions", {
+}): Promise<void> {
+    const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
+    if (!res.ok) throw new Error(`Failed to create session (${res.status})`);
 }
 
 async function apiGetSession(id: string): Promise<ScorecardState | null> {
     const res = await fetch(`/api/sessions/${id}`);
-    if (!res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to load session (${res.status})`);
     return res.json();
 }
 
-async function apiUpdateSession(id: string, data: Partial<ScorecardState>) {
-    await fetch(`/api/sessions/${id}`, {
+async function apiUpdateSession(id: string, data: Partial<ScorecardState>): Promise<void> {
+    const res = await fetch(`/api/sessions/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
     });
+    if (!res.ok) throw new Error(`Failed to save session (${res.status})`);
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -86,6 +91,9 @@ export function useScorecard(initialSessionId?: string) {
     const [isTeamMember, setIsTeamMember] = useState(false);
     const [needsToJoin, setNeedsToJoin] = useState(false);
     const [sessionOwner, setSessionOwner] = useState<string>("");
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+    const [syncError, setSyncError] = useState<string | null>(null);
+    const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 
     // Debounce ref: avoid saving on every keystroke
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,20 +109,38 @@ export function useScorecard(initialSessionId?: string) {
             try {
                 // Joining via shared session link
                 if (initialSessionId) {
-                    const state = await apiGetSession(initialSessionId);
-                    if (state && state.questionsHash === QUESTIONS_HASH) {
-                        setSessionId(initialSessionId);
-                        setAnswers(state.answers || getDefaultAnswers());
-                        setTeamMembers(state.teamMembers || []);
-                        setSessionOwner(
-                            `${state.personalInfo.firstName} ${state.personalInfo.lastName}`
-                        );
-                        setNeedsToJoin(true);
-                        setHasStarted(true);
-                        setIsTeamMember(true);
+                    let state: ScorecardState | null = null;
+                    try {
+                        state = await apiGetSession(initialSessionId);
+                    } catch {
+                        setSessionLoadError("Could not connect to the server. Please check your connection and try again.");
                         setIsHydrated(true);
                         return;
                     }
+
+                    if (!state) {
+                        setSessionLoadError("This session link is invalid or has expired.");
+                        setIsHydrated(true);
+                        return;
+                    }
+
+                    if (state.questionsHash !== QUESTIONS_HASH) {
+                        setSessionLoadError("This session was created with an older version of the scorecard and is no longer compatible.");
+                        setIsHydrated(true);
+                        return;
+                    }
+
+                    setSessionId(initialSessionId);
+                    setAnswers(state.answers || getDefaultAnswers());
+                    setTeamMembers(state.teamMembers || []);
+                    setSessionOwner(
+                        `${state.personalInfo.firstName} ${state.personalInfo.lastName}`
+                    );
+                    setNeedsToJoin(true);
+                    setHasStarted(true);
+                    setIsTeamMember(true);
+                    setIsHydrated(true);
+                    return;
                 }
 
                 // Load from localStorage
@@ -169,8 +195,18 @@ export function useScorecard(initialSessionId?: string) {
 
         // Debounce the network write
         if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => {
-            apiUpdateSession(sessionId, { answers, teamMembers, personalInfo });
+        saveTimer.current = setTimeout(async () => {
+            setSyncStatus("syncing");
+            setSyncError(null);
+            try {
+                await apiUpdateSession(sessionId, { answers, teamMembers, personalInfo });
+                setSyncStatus("synced");
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : "Failed to sync";
+                setSyncStatus("error");
+                setSyncError(msg);
+                console.error("Sync error:", e);
+            }
         }, 800);
 
         return () => {
@@ -242,7 +278,7 @@ export function useScorecard(initialSessionId?: string) {
         setTeamMembers((prev) => [...prev, newMember]);
     }, []);
 
-    const startScorecard = useCallback(async (info?: PersonalInfo) => {
+    const startScorecard = useCallback(async (info?: PersonalInfo): Promise<void> => {
         const newSessionId = generateSessionId();
         const defaultAnswers = getDefaultAnswers();
         const newPersonalInfo = info || personalInfo;
@@ -267,13 +303,23 @@ export function useScorecard(initialSessionId?: string) {
         setTeamMembers([]);
         setHasStarted(true);
 
-        // Create session in MongoDB
-        await apiCreateSession({
-            sessionId: newSessionId,
-            personalInfo: newPersonalInfo,
-            answers: defaultAnswers,
-            questionsHash: QUESTIONS_HASH,
-        });
+        // Create session in MongoDB (non-fatal — localStorage is already written)
+        setSyncStatus("syncing");
+        try {
+            await apiCreateSession({
+                sessionId: newSessionId,
+                personalInfo: newPersonalInfo,
+                answers: defaultAnswers,
+                questionsHash: QUESTIONS_HASH,
+            });
+            setSyncStatus("synced");
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : "Failed to create session";
+            setSyncStatus("error");
+            setSyncError(msg);
+            console.error("Failed to create session in MongoDB:", e);
+            // Don't rethrow — the scorecard is usable via localStorage
+        }
     }, [personalInfo]);
 
     const joinSession = useCallback((memberInfo: PersonalInfo) => {
@@ -292,6 +338,8 @@ export function useScorecard(initialSessionId?: string) {
         setTeamMembers([]);
         setHasStarted(false);
         setSessionId("");
+        setSyncStatus("idle");
+        setSyncError(null);
         localStorage.removeItem(STORAGE_KEY);
     }, []);
 
@@ -384,6 +432,9 @@ export function useScorecard(initialSessionId?: string) {
         isTeamMember,
         needsToJoin,
         sessionOwner,
+        syncStatus,
+        syncError,
+        sessionLoadError,
         groupedQuestions,
         sectionScores,
         overallStats,

@@ -16,6 +16,7 @@ export default function HomePage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
 
   useEffect(() => {
     if (isHydrated && hasStarted) {
@@ -46,11 +47,19 @@ export default function HomePage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
-      startScorecard();
+    if (!validateForm()) return;
+    setIsStarting(true);
+    try {
+      await startScorecard();
       router.push("/scorecard");
+    } catch {
+      // startScorecard is non-fatal — localStorage is written before any network call
+      // so we still navigate even if MongoDB fails
+      router.push("/scorecard");
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -251,16 +260,17 @@ export default function HomePage() {
               {/* Submit Button */}
               <button
                 type="submit"
+                disabled={isStarting}
                 style={{
                   width: "100%",
                   padding: "20px",
                   fontSize: "16px",
                   fontWeight: "700",
                   color: "white",
-                  background: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
+                  background: isStarting ? "rgba(249,115,22,0.6)" : "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
                   border: "none",
                   borderRadius: "14px",
-                  cursor: "pointer",
+                  cursor: isStarting ? "not-allowed" : "pointer",
                   boxShadow: "0 10px 40px rgba(249,115,22,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
                   transition: "all 0.3s ease",
                   display: "flex",
@@ -277,10 +287,19 @@ export default function HomePage() {
                   e.currentTarget.style.boxShadow = "0 10px 40px rgba(249,115,22,0.4), inset 0 1px 0 rgba(255,255,255,0.2)";
                 }}
               >
-                Start Scorecard
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
+                {isStarting ? (
+                  <>
+                    <span style={{ width: "18px", height: "18px", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    Start Scorecard
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </>
+                )}
               </button>
             </form>
           </div>

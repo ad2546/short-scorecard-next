@@ -41,6 +41,9 @@ function ScorecardContent() {
         needsToJoin,
         sessionOwner,
         joinSession,
+        syncStatus,
+        syncError,
+        sessionLoadError,
     } = useScorecard(sessionFromUrl || undefined);
 
     const sections = Object.keys(groupedQuestions);
@@ -109,6 +112,25 @@ function ScorecardContent() {
         );
     }
 
+    // Show error if shared session link failed to load
+    if (sessionLoadError) {
+        return (
+            <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+                <div style={{ maxWidth: "480px", textAlign: "center" }}>
+                    <div style={{ fontSize: "48px", marginBottom: "24px" }}>⚠️</div>
+                    <h2 style={{ fontSize: "24px", fontWeight: "700", color: "white", marginBottom: "12px" }}>Session Error</h2>
+                    <p style={{ fontSize: "15px", color: "rgba(255,255,255,0.5)", marginBottom: "32px" }}>{sessionLoadError}</p>
+                    <button
+                        onClick={() => router.push("/")}
+                        style={{ padding: "14px 32px", borderRadius: "12px", background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "white", fontSize: "15px", fontWeight: "600", cursor: "pointer" }}
+                    >
+                        Start a New Scorecard
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     // Show join form for team members who need to enter their info
     if (needsToJoin && sessionId) {
         return (
@@ -126,6 +148,30 @@ function ScorecardContent() {
 
     return (
         <div style={{ minHeight: "100vh", background: "#000" }}>
+            {/* Sync status banner */}
+            {syncStatus === "error" && (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+                    background: "rgba(239,68,68,0.95)", color: "white",
+                    padding: "10px 24px", fontSize: "13px", fontWeight: "500",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                }}>
+                    <span>⚠</span>
+                    <span>Sync failed — your progress is saved locally. {syncError}</span>
+                </div>
+            )}
+            {syncStatus === "syncing" && (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+                    background: "rgba(249,115,22,0.9)", color: "white",
+                    padding: "6px 24px", fontSize: "12px", fontWeight: "500",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                }}>
+                    <span style={{ width: "10px", height: "10px", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+                    <span>Saving...</span>
+                </div>
+            )}
+
             {/* Results Modal */}
             <ResultsModal
                 isOpen={showResultsModal}
