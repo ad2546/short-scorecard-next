@@ -199,7 +199,7 @@ export function useScorecard(initialSessionId?: string) {
             setSyncStatus("syncing");
             setSyncError(null);
             try {
-                await apiUpdateSession(sessionId, { answers, teamMembers, personalInfo });
+                await apiUpdateSession(sessionId, { answers, teamMembers, personalInfo, hasStarted, questionsHash: QUESTIONS_HASH });
                 setSyncStatus("synced");
             } catch (e) {
                 const msg = e instanceof Error ? e.message : "Failed to sync";

@@ -39,15 +39,17 @@ export async function PUT(
         if (body.answers !== undefined) update.answers = body.answers;
         if (body.teamMembers !== undefined) update.teamMembers = body.teamMembers;
         if (body.personalInfo !== undefined) update.personalInfo = body.personalInfo;
+        if (body.hasStarted !== undefined) update.hasStarted = body.hasStarted;
 
-        const result = await sessions.updateOne(
+        // Upsert: if the POST /api/sessions race-lost to the first PUT, create the doc here
+        const onInsert: Record<string, unknown> = { createdAt: Date.now(), version: "3" };
+        if (body.questionsHash !== undefined) onInsert.questionsHash = body.questionsHash;
+
+        await sessions.updateOne(
             { _id: id as never },
-            { $set: update }
+            { $set: update, $setOnInsert: onInsert },
+            { upsert: true }
         );
-
-        if (result.matchedCount === 0) {
-            return NextResponse.json({ error: "Session not found" }, { status: 404 });
-        }
 
         return NextResponse.json({ ok: true });
     } catch (err) {
