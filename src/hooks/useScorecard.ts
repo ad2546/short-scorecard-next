@@ -247,9 +247,23 @@ export function useScorecard(initialSessionId?: string) {
         const defaultAnswers = getDefaultAnswers();
         const newPersonalInfo = info || personalInfo;
 
+        // Write to localStorage synchronously before navigation so the
+        // scorecard page's load effect always finds a valid state.
+        const state: ScorecardState = {
+            version: "3",
+            questionsHash: QUESTIONS_HASH,
+            sessionId: newSessionId,
+            answers: defaultAnswers,
+            personalInfo: newPersonalInfo,
+            teamMembers: [],
+            hasStarted: true,
+            createdAt: Date.now(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
         setSessionId(newSessionId);
         setAnswers(defaultAnswers);
-        if (info) setPersonalInfo(info);
+        setPersonalInfo(newPersonalInfo);
         setTeamMembers([]);
         setHasStarted(true);
 
